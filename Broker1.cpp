@@ -6,6 +6,7 @@
 using namespace std;
 
 enum class OrderType {
+    None,
     Buy,
     Sell
 };
@@ -15,15 +16,16 @@ class Active {
     string typeOfContract;
     string category;
     double price;
+    float unitValue;
 
 public:
-    Active() : name(""), typeOfContract(""), category(""), price(0.0) {}
+    Active() : name(""), typeOfContract(""), category(""), price(0.0), unitValue(0.5) {}
 
     void setName(string newName) {
         name = newName;
     }
 
-    string getName() {
+    string getName() const {
         return name;
     }
 
@@ -31,7 +33,7 @@ public:
         typeOfContract = newType;
     }
 
-    string getContractType() {
+    string getContractType() const {
         return typeOfContract;
     }
 
@@ -39,8 +41,16 @@ public:
         price = marketPrice;
     }
 
-    double getMarketPrice() {
+    double getMarketPrice() const {
         return price;
+    }
+
+    void setUnitValue(float value) {
+        unitValue = value;
+    }
+
+    float getUnitValue() const {
+        return unitValue;
     }
 };
 
@@ -49,12 +59,15 @@ class Order {
     int id;
     float quantity;
     double nominalValue;
+    string activeName;
     OrderType orderType;
 
 public:
-    Order() : id(nextId++), quantity(0.0), nominalValue(0.0), orderType(OrderType::Buy) {}
-    Order(float orderQuantity, double value, OrderType type)
-        : id(nextId++), quantity(orderQuantity), nominalValue(value), orderType(type) {}
+    Order()
+        : id(nextId++), quantity(0), nominalValue(0.0), activeName(""), orderType(OrderType::Buy) {}
+
+    Order(float orderQuantity, double value, const string& name, OrderType type)
+        : id(nextId++), quantity(orderQuantity), nominalValue(value), activeName(name), orderType(type) {}
 
     int getId() const {
         return id;
@@ -66,6 +79,10 @@ public:
 
     double getNominalValue() const {
         return nominalValue;
+    }
+
+    string getActiveName() const {
+        return activeName;
     }
 
     OrderType getOrderType() const {
@@ -107,8 +124,11 @@ public:
         name = newName;
     }
 
-    bool Operate(bool newOperate) {
+    void setOperate(bool newOperate) {
         operate = newOperate;
+    }
+
+    bool getOperate() const {
         return operate;
     }
 
@@ -123,59 +143,82 @@ public:
     void printOrders() const {
         cout << "User Orders:\n";
         for (const auto& order : orders) {
-            cout << "ID: " << order.getId()
-                 << ", Type: " << static_cast<int>(order.getOrderType())
-                 << ", Quantity: " << order.getQuantity()
-                 << ", Nominal Value: " << order.getNominalValue() << endl;
+            cout << "ID: " << order.getId() << ", Type: " << static_cast<int>(order.getOrderType())
+                 << ", Quantity: " << order.getQuantity() << ", Nominal Value: " << order.getNominalValue()
+                 << ", Active Name: " << order.getActiveName() << endl;
         }
-        cout << "Wallet Balance: " << wallet.getBalance() << endl;
+    }
+
+    void printWalletBalance() const {
+        double totalBalance = wallet.getBalance();
+        for (const auto& order : orders) {
+            double nominalValue = order.getQuantity() * order.getNominalValue();
+            if (order.getOrderType() == OrderType::Buy) {
+                totalBalance -= nominalValue;
+            } else if (order.getOrderType() == OrderType::Sell) {
+                totalBalance += nominalValue;
+            }
+        }
+        cout << "Wallet Balance: " << totalBalance << endl;
     }
 };
 
 OrderType MakeOrder(User& user) {
-    if (user.Operate(true)) {
+    if (user.getOperate()) {
         int choice;
-        do {
-            cout << "Choose an option:\n";
-            cout << "1. Buy\n";
-            cout << "2. Sell\n";
-            cin >> choice;
-        } while (choice != 1 && choice != 2);
-
+        cout << "Choose an option:\n";
+        cout << "1. Buy\n";
+        cout << "2. Sell\n";
+        cin >> choice;
         return (choice == 1) ? OrderType::Buy : OrderType::Sell;
     }
 
-    return OrderType::Buy;  // Default value if the operation couldn't be performed
+    return OrderType::None;
 }
 
-bool ExecuteOrder(User& user) {
+bool ExecuteOrder(User& user, Active* activeList[], int numActives) {
     OrderType orderType = MakeOrder(user);
 
     if (orderType == OrderType::Buy) {
         cout << "Buy order." << endl;
         float quantity;
-        double nominalValue;
+        int activeIndex;
 
         cout << "Enter quantity: ";
         cin >> quantity;
-        cout << "Enter nominal value: ";
-        cin >> nominalValue;
 
-        Order order(quantity, nominalValue, orderType);
+        cout << "Choose the active to buy:\n";
+        for (int i = 0; i < numActives; ++i) {
+            cout << i + 1 << ". " << activeList[i]->getName() << " (Unit Value: " << activeList[i]->getUnitValue() << ")\n";
+        }
+        cin >> activeIndex;
+        activeIndex--;  // Adjust for 0-based indexing
+
+        double nominalValue = quantity * activeList[activeIndex]->getUnitValue();
+
+        Order order(quantity, nominalValue, activeList[activeIndex]->getName(), orderType);
         user.addOrder(order);
         user.getWallet().subtractFromBalance(nominalValue);
         return true;
     } else if (orderType == OrderType::Sell) {
         cout << "Sell order." << endl;
         float quantity;
-        double nominalValue;
+        int activeIndex;
 
         cout << "Enter quantity: ";
         cin >> quantity;
-        cout << "Enter nominal value: ";
-        cin >> nominalValue;
 
-        Order order(quantity, nominalValue, orderType);
+        cout << "Choose the active to sell:\n";
+        for (int i = 0; i < numActives; ++i) {
+            cout << i + 1 << ". " << activeList[i]->getName() << " (Unit Value: " << activeList[i]->getUnitValue() << ")\n";
+        }
+        cin >> activeIndex;
+        activeIndex--;  // Adjust for 0-based indexing
+
+        double nominalValue = quantity * activeList[activeIndex]->getUnitValue();
+		
+
+        Order order(quantity, nominalValue, activeList[activeIndex]->getName(), orderType);
         user.addOrder(order);
         user.getWallet().subtractFromBalance(nominalValue);
         return true;
@@ -187,49 +230,39 @@ bool ExecuteOrder(User& user) {
 
 int main() {
     Active* gold = new Active();
-    gold->setContractType("CFD");
+    Active* silver = new Active();
+    Active* nasdaq100 = new Active();
+    Active* usdinx = new Active();
 
-    // Crear usuarios
-    User user1, user2, user3, user4, user5;
+    gold->setName("Gold");
+    silver->setName("Silver");
+    nasdaq100->setName("NASDAQ 100");
+    usdinx->setName("USD Index");
 
-    // Establecer nombres de usuarios
+    User user1, user2;
+
     user1.setName("User 1");
     user2.setName("User 2");
-    user3.setName("User 3");
-    user4.setName("User 4");
-    user5.setName("User 5");
 
-    // Establecer operación activa para todos los usuarios
-    user1.Operate(true);
-    user2.Operate(true);
-    user3.Operate(true);
-    user4.Operate(true);
-    user5.Operate(true);
+    user1.setOperate(true);
+    user1.getWallet().setBalance(1000);
 
-    // Establecer saldo inicial en la billetera de cada usuario
-    user1.getWallet().setBalance(10000);
-    user2.getWallet().setBalance(10000);
-    user3.getWallet().setBalance(10000);
-    user4.getWallet().setBalance(10000);
-    user5.getWallet().setBalance(10000);
+    user2.setOperate(false);
+    user2.getWallet().setBalance(500);
 
-    // Crear cola de usuarios
     queue<User> userQueue;
     userQueue.push(user1);
     userQueue.push(user2);
-    userQueue.push(user3);
-    userQueue.push(user4);
-    userQueue.push(user5);
 
-    // Procesar órdenes para cada usuario en la cola
+    Active* activeList[] = { gold, silver, nasdaq100, usdinx };
+    int numActives = sizeof(activeList) / sizeof(activeList[0]);
+
     while (!userQueue.empty()) {
         User currentUser = userQueue.front();
         userQueue.pop();
-        ExecuteOrder(currentUser);
-        currentUser.printOrders();
+        ExecuteOrder(currentUser, activeList, numActives);
+        currentUser.printWalletBalance();
     }
-
-    delete gold;
 
     return 0;
 }
