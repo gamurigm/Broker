@@ -45,11 +45,11 @@ public:
         return price;
     }
     
-     void setUnitValue(float value) {
-	        unitValue = value;
-	    }
-	
-	float getUnitValue() const {
+    void setUnitValue(float value) {
+        unitValue = value;
+    }
+    
+    float getUnitValue() const {
         return unitValue;
     }
 };
@@ -144,20 +144,23 @@ public:
         cout << "User Orders:\n";
         for (const auto& order : orders) {
             cout << "ID: " << order.getId() << ", Type: " << static_cast<int>(order.getOrderType())
-                 << ", Quantity: " << order.getQuantity() << ", Nominal Value: " << order.getNominalValue()
-                 << ", Active Name: " << order.getActiveName() << endl;
+                << ", Quantity: " << order.getQuantity() << ", Nominal Value: " << order.getNominalValue()
+                << ", Active Name: " << order.getActiveName() << endl;
         }
     }
     
     void printWalletBalance() const {
-	        double totalBalance = wallet.getBalance();
-	        for (const auto& order : orders) {
+	    double totalBalance = wallet.getBalance();
+	    for (const auto& order : orders) {
+	        if (order.getOrderType() == OrderType::Buy) {
 	            double nominalValue = order.getNominalValue();
 	            totalBalance -= nominalValue;
 	        }
-	        cout << "Wallet Balance: " << totalBalance << endl;
 	    }
-	};
+	    cout << "Wallet Balance: " << totalBalance << endl;
+	}
+	
+};
 
 
 OrderType MakeOrder(User& user) {
@@ -191,7 +194,8 @@ bool ExecuteOrder(User& user, Active* activeList[], int numActives) {
         cin >> activeIndex;
         activeIndex--;  // Adjust for 0-based indexing
 
-        double nominalValue = quantity * activeList[activeIndex]->getUnitValue();
+        double unitValue = activeList[activeIndex]->getUnitValue();
+        double nominalValue = quantity * unitValue;
 
         if (nominalValue > user.getWallet().getBalance()) {
             cout << "Insufficient balance. Order execution failed." << endl;
@@ -217,7 +221,8 @@ bool ExecuteOrder(User& user, Active* activeList[], int numActives) {
         cin >> activeIndex;
         activeIndex--;  // Adjust for 0-based indexing
 
-        double nominalValue = quantity * activeList[activeIndex]->getUnitValue();
+        double unitValue = activeList[activeIndex]->getUnitValue();
+        double nominalValue = quantity * unitValue;
 
         Order order(quantity, nominalValue, activeList[activeIndex]->getName(), orderType);
         user.addOrder(order);
@@ -229,14 +234,16 @@ bool ExecuteOrder(User& user, Active* activeList[], int numActives) {
     }
 }
 
-
-
-
 int main() {
     Active* gold = new Active();
     Active* silver = new Active();
     Active* nasdaq100 = new Active();
     Active* usdinx = new Active();
+
+    gold->setName("Gold");
+    silver->setName("Silver");
+    nasdaq100->setName("Nasdaq100");
+    usdinx->setName("USDINX");
 
     User user1, user2;
 
@@ -257,7 +264,7 @@ int main() {
     int numActives = sizeof(activeList) / sizeof(activeList[0]);
 
     while (!userQueue.empty()) {
-        User currentUser = userQueue.front();
+        User& currentUser = userQueue.front();
         userQueue.pop();
         ExecuteOrder(currentUser, activeList, numActives);
         currentUser.printOrders();
@@ -271,4 +278,3 @@ int main() {
 
     return 0;
 }
-
