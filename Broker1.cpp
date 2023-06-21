@@ -2,9 +2,19 @@
 #include <string>
 #include <vector>
 #include <queue>
+#include <algorithm>
 
 using namespace std;
 
+struct Date {
+    int day;
+    int month;
+    int year;
+};
+enum class OrderStatus {
+    Open,
+    Closed
+};
 enum class OrderType {
     None,
     Buy,
@@ -55,20 +65,31 @@ public:
 };
 
 class Order {
+	OrderStatus status;
     static int nextId;
     int id;
     float quantity;
     double nominalValue;
     string activeName;
     OrderType orderType;
-
+    Date openingDate;
+    Date closingDate;
+    
+   
 public:
     Order()
-        : id(nextId++), quantity(0), nominalValue(0.0), activeName(""), orderType(OrderType::Buy) {}
-
-    Order(float orderQuantity, double value, const string& name, OrderType type)
-        : id(nextId++), quantity(orderQuantity), nominalValue(value), activeName(name), orderType(type) {}
-
+	    : status(OrderStatus::Open), id(nextId++), quantity(0), nominalValue(0.0), activeName(""), orderType(OrderType::Buy) {}
+	
+	Order(float orderQuantity, double value, const string& name, OrderType type, const Date& date)
+	    : status(OrderStatus::Open), id(nextId++), quantity(orderQuantity), nominalValue(value), activeName(name), orderType(type), openingDate(date), closingDate({0, 0, 0}) {}
+	
+	    OrderStatus getStatus() const {
+	        return status;
+	    }
+	
+	    void setStatus(OrderStatus newStatus) {
+	        status = newStatus;
+	    }
     int getId() const {
         return id;
     }
@@ -87,6 +108,18 @@ public:
 
     OrderType getOrderType() const {
         return orderType;
+    }
+    
+    void setClosingDate(const Date& date) {
+        closingDate = date;
+    }
+    
+    Date getOpeningDate() const {
+        return openingDate;
+    }
+    
+    Date getClosingDate() const {
+        return closingDate;
     }
 };
 
@@ -108,6 +141,10 @@ public:
 
     void subtractFromBalance(double amount) {
         balance -= amount;
+    }
+
+    void addToBalance(double amount) {
+        balance += amount;
     }
 };
 
@@ -136,32 +173,54 @@ public:
         return wallet;
     }
 
-    void addOrder(Order order) {
-        orders.push_back(order);
-    }
+   
+       void addOrder(const Order& order) {
+           orders.push_back(order);
+   
+           wallet.subtractFromBalance(order.getNominalValue());
+   
+           cout << "Added order with ID: " << order.getId() << endl;
+       }
+   
+       void closeOrder(int orderId, const Date& closingDate) {
+           auto it = find_if(orders.begin(), orders.end(), [&](const Order& order) {
+               return order.getId() == orderId;
+           });
+   
+           if (it != orders.end()) {
+               Order& closedOrder = *it;
+               closedOrder.setStatus(OrderStatus::Closed);
+               closedOrder.setClosingDate(closingDate);
+   
+               // No es necesario restar el valor nominal nuevamente al balance
+               // wallet.subtractFromBalance(closedOrder.getNominalValue());
+   
+               cout << "Closed order with ID: " << orderId << endl;
+           } else {
+               cout << "Order with ID " << orderId << " not found." << endl;
+           }
+       }
+	
+	
 
     void printOrders() const {
-        cout << "User Orders:\n";
-        for (const auto& order : orders) {
-            cout << "ID: " << order.getId() << ", Type: " << static_cast<int>(order.getOrderType())
-                << ", Quantity: " << order.getQuantity() << ", Nominal Value: " << order.getNominalValue()
-                << ", Active Name: " << order.getActiveName() << endl;
-        }
-    }
-    
-    void printWalletBalance() const {
-	    double totalBalance = wallet.getBalance();
+	    cout << "User Transactions:\n";
 	    for (const auto& order : orders) {
-	        if (order.getOrderType() == OrderType::Buy) {
-	            double nominalValue = order.getNominalValue();
-	            totalBalance -= nominalValue;
-	        }
+	        cout << "ID: " << order.getId() << ", Type: " << static_cast<int>(order.getOrderType())
+	             << ", Quantity: " << order.getQuantity() << ", Nominal Value: " << order.getNominalValue()
+	             << ", Active Name: " << order.getActiveName()
+	             << ", Status: " << (order.getStatus() == OrderStatus::Open ? "Open" : "Closed")
+	             << ", Opening Date: " << order.getOpeningDate().day << "/" << order.getOpeningDate().month << "/" << order.getOpeningDate().year
+	             << ", Closing Date: " << order.getClosingDate().day << "/" << order.getClosingDate().month << "/" << order.getClosingDate().year
+	             << endl;
 	    }
-	    cout << "Wallet Balance: " << totalBalance << endl;
 	}
 	
-};
 
+    void printWalletBalance() const {
+        cout << "Wallet Balance: " << wallet.getBalance() << endl;
+    }
+};
 
 OrderType MakeOrder(User& user) {
     if (user.getOperate()) {
@@ -179,59 +238,46 @@ OrderType MakeOrder(User& user) {
 bool ExecuteOrder(User& user, Active* activeList[], int numActives) {
     OrderType orderType = MakeOrder(user);
 
+    void (User::*executeFunction)(const Order&) = nullptr;
+
     if (orderType == OrderType::Buy) {
         cout << "Buy order." << endl;
-        float quantity;
-        int activeIndex;
-
-        cout << "Enter quantity: ";
-        cin >> quantity;
-
-        cout << "Choose the active to buy:\n";
-        for (int i = 0; i < numActives; ++i) {
-            cout << i + 1 << ". " << activeList[i]->getName() << " (Unit Value: " << activeList[i]->getUnitValue() << ")\n";
-        }
-        cin >> activeIndex;
-        activeIndex--;  // Adjust for 0-based indexing
-
-        double unitValue = activeList[activeIndex]->getUnitValue();
-        double nominalValue = quantity * unitValue;
-
-        if (nominalValue > user.getWallet().getBalance()) {
-            cout << "Insufficient balance. Order execution failed." << endl;
-            return false;
-        }
-
-        Order order(quantity, nominalValue, activeList[activeIndex]->getName(), orderType);
-        user.addOrder(order);
-        user.getWallet().subtractFromBalance(nominalValue);
-        return true;
+        executeFunction = &User::addOrder;
     } else if (orderType == OrderType::Sell) {
         cout << "Sell order." << endl;
-        float quantity;
-        int activeIndex;
-
-        cout << "Enter quantity: ";
-        cin >> quantity;
-
-        cout << "Choose the active to sell:\n";
-        for (int i = 0; i < numActives; ++i) {
-            cout << i + 1 << ". " << activeList[i]->getName() << " (Unit Value: " << activeList[i]->getUnitValue() << ")\n";
-        }
-        cin >> activeIndex;
-        activeIndex--;  // Adjust for 0-based indexing
-
-        double unitValue = activeList[activeIndex]->getUnitValue();
-        double nominalValue = quantity * unitValue;
-
-        Order order(quantity, nominalValue, activeList[activeIndex]->getName(), orderType);
-        user.addOrder(order);
-        user.getWallet().subtractFromBalance(nominalValue);
-        return true;
+        executeFunction = &User::addOrder;
     } else {
         cout << "Order execution failed." << endl;
         return false;
     }
+
+    if (executeFunction != nullptr) {
+        float quantity;
+        int activeIndex;
+        int day, month, year;
+
+        cout << "Enter quantity: ";
+        cin >> quantity;
+
+        cout << "Choose the active:\n";
+        for (int i = 0; i < numActives; ++i) {
+            cout << i + 1 << ". " << activeList[i]->getName() << " (Unit Value: " << activeList[i]->getUnitValue() << ")\n";
+        }
+        cin >> activeIndex;
+        activeIndex--;  // Adjust for 0-based indexing
+
+        cout << "Enter opening date (day month year): ";
+        cin >> day >> month >> year;
+        Date openingDate = { day, month, year };
+
+        double nominalValue = quantity * activeList[activeIndex]->getUnitValue(); // Calculate nominal value
+
+        Order order(quantity, nominalValue, activeList[activeIndex]->getName(), orderType, openingDate);
+        (user.*executeFunction)(order);
+        return true;
+    }
+
+    return false;
 }
 
 int main() {
@@ -245,10 +291,11 @@ int main() {
     nasdaq100->setName("Nasdaq100");
     usdinx->setName("USDINX");
 
-    User user1, user2;
+    User user1, user2, user3;
 
     user1.setName("User 1");
     user2.setName("User 2");
+    user3.setName("User 3");
 
     user1.setOperate(true);
     user1.getWallet().setBalance(1000);
@@ -256,19 +303,38 @@ int main() {
     user2.setOperate(false);
     user2.getWallet().setBalance(500);
 
-    queue<User> userQueue;
-    userQueue.push(user1);
-    userQueue.push(user2);
+    user3.setOperate(true);
+    user3.getWallet().setBalance(6000);
+
+    queue<User> users;
+    users.push(user1);
+    users.push(user2);
+    users.push(user3);
 
     Active* activeList[] = { gold, silver, nasdaq100, usdinx };
     int numActives = sizeof(activeList) / sizeof(activeList[0]);
 
-    while (!userQueue.empty()) {
-        User& currentUser = userQueue.front();
-        userQueue.pop();
+    while (!users.empty()) {
+        User& currentUser = users.front();
+        users.pop();
         ExecuteOrder(currentUser, activeList, numActives);
         currentUser.printOrders();
         currentUser.printWalletBalance();
+
+        int closeOrderId;
+        cout << "Enter the ID of the order to close (0 to skip): ";
+        cin >> closeOrderId;
+
+        if (closeOrderId != 0) {
+            int day, month, year;
+            cout << "Enter closing date (day month year): ";
+            cin >> day >> month >> year;
+            Date closingDate = { day, month, year };
+
+            currentUser.closeOrder(closeOrderId, closingDate);
+            currentUser.printOrders();
+            currentUser.printWalletBalance();
+        }
     }
 
     delete gold;
@@ -277,4 +343,5 @@ int main() {
     delete usdinx;
 
     return 0;
+    
 }
